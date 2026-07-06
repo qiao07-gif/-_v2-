@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>语音转文字</title>
+
+<!-- PWA Meta -->
+<meta name="theme-color" content="#d4783b">
+<meta name="description" content="纯本地语音转文字工具——免费、安全、不上传任何音频">
+<meta name="application-name" content="语音转文字">
+
+<!-- iOS Safari 支持 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="语音转文字">
+<meta name="format-detection" content="telephone=no">
+
+<!-- Manifest 链接（静态文件，部署到 HTTPS 后自动生效） -->
+<link rel="manifest" href="manifest.json">
+
+<!-- 图标：内联 SVG Data URL -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23d4783b'/><text x='50' y='68' text-anchor='middle' font-size='55' fill='white' font-family='sans-serif'>🎙</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23d4783b'/><text x='50' y='68' text-anchor='middle' font-size='55' fill='white' font-family='sans-serif'>🎙</text></svg>">
+
+<style>
+  :root {
+    --bg: #f5f0eb;
+    --card: #ffffff;
+    --text: #2c2416;
+    --sub: #6b5e4a;
+    --accent: #d4783b;
+    --accent2: #b85c2e;
+    --green: #5a8f6b;
+    --red: #c4554d;
+    --border: #e0d8cc;
+    --shadow: 0 2px 16px rgba(0,0,0,0.06);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 500px;
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* 恢复提示横幅 */
+  .recover-banner {
+    display: none;
+    background: #e8f4e8;
+    border: 1px solid #b4d9b4;
+    color: #3a6a3a;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+    animation: slideDown 0.4s ease;
+  }
+  .recover-banner.show { display: block; }
+  .recover-banner button {
+    display: inline-block;
+    margin: 6px 4px 0;
+    padding: 6px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--green);
+    color: #fff;
+  }
+  .recover-banner button.ignore {
+    background: #ccc;
+    color: #555;
+  }
+
+  /* 安装提示横幅 */
+  .install-banner {
+    display: none;
+    background: var(--accent);
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 600;
+    animation: slideDown 0.4s ease;
+  }
+  .install-banner.show { display: block; }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 安全徽章 */
+  .safety-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--green);
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .safety-badge .shield {
+    width: 14px;
+    height: 16px;
+    fill: var(--green);
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.5px;
+  }
+  .header p {
+    font-size: 13px;
+    color: var(--sub);
+    margin-top: 4px;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 20px 18px;
+    margin-bottom: 14px;
+  }
+
+  /* 语言选择 */
+  .lang-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .lang-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--sub);
+  }
+  .lang-row select {
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    font-size: 15px;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%236b5e4a' stroke-width='2' fill='none'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
+  }
+  .lang-row select:focus {
+    border-color: var(--accent);
+  }
+
+  /* 状态提示 */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--sub);
+    margin-bottom: 16px;
+    min-height: 24px;
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .dot.idle { background: #bbb; }
+  .dot.listening { background: var(--red); animation: pulse 1.2s infinite; }
+  .dot.error   { background: var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.8); opacity: 0.4; }
+  }
+
+  /* 按钮区 */
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .btn {
+    padding: 14px 10px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.3px;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.85; }
+
+  .btn-start {
+    grid-column: 1 / -1;
+    background: var(--accent);
+    color: #fff;
+    font-size: 17px;
+    padding: 16px;
+    border-radius: 14px;
+  }
+  .btn-start:active { background: var(--accent2); }
+  .btn-start.recording {
+    background: var(--red);
+    animation: pulse-bg 1.2s infinite;
+  }
+  @keyframes pulse-bg {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(196, 85, 77, 0.4); }
+    50%      { box-shadow: 0 0 0 12px rgba(196, 85, 77, 0); }
+  }
+
+  .btn-copy {
+    background: #f0ece4;
+    color: var(--text);
+  }
+  .btn-clear {
+    background: #f0ece4;
+    color: var(--text);
+  }
+  .btn-download {
+    background: #f0ece4;
+    color: var(--text);
+    grid-column: 1 / -1;
+  }
+  .btn-copy:active, .btn-clear:active, .btn-download:active {
+    background: #e4ddd0;
+  }
+
+  /* 文本区 */
+  .text-area {
+    width: 100%;
+    min-height: 180px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 14px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--text);
+    background: #fdfcf9;
+    resize: none;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .text-area:focus {
+    border-color: var(--accent);
+  }
+  .text-area::placeholder {
+    color: #c4b99a;
+    font-size: 14px;
+  }
+  .text-area.listening-border {
+    border-color: var(--red);
+    border-width: 2px;
+  }
+
+  /* 字数 */
+  .word-count {
+    text-align: right;
+    font-size: 12px;
+    color: #b0a58e;
+    margin-top: 6px;
+  }
+
+  /* 安全声明 */
+  .safety-card {
+    background: #f4f9f2;
+    border: 1px solid #d4e8cc;
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 12px;
+    color: #4a7a3d;
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .safety-card strong { color: #3a6a2d; }
+
+  /* 提示信息 */
+  .tips {
+    background: #fdf9f2;
+    border: 1px solid #eee4d0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: #8b7a5e;
+    line-height: 1.7;
+  }
+  .tips strong { color: var(--accent); }
+
+  .browser-warning {
+    display: none;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #991b1b;
+    margin-bottom: 16px;
+    line-height: 1.7;
+  }
+
+  /* 手机端触控优化 */
+  @media (max-width: 500px) {
+    .card { padding: 16px 14px; border-radius: 14px; }
+    .header h1 { font-size: 22px; }
+    .btn { font-size: 14px; padding: 13px 8px; }
+    .btn-start { font-size: 16px; padding: 15px; }
+    .text-area { min-height: 160px; font-size: 15px; padding: 12px; }
+  }
+  @media (min-width: 768px) {
+    body { padding: 40px 20px; }
+    .container { max-width: 520px; }
+    .card { padding: 28px 30px; }
+    .text-area { min-height: 220px; max-height: 420px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 安装提示 -->
+  <div class="install-banner" id="installBanner" onclick="dismissInstall()">
+    点击这里，将工具添加到手机桌面
+  </div>
+
+  <!-- 恢复横幅 -->
+  <div class="recover-banner" id="recoverBanner">
+    <span id="recoverMsg"></span><br>
+    <button onclick="recoverText()">恢复文字</button>
+    <button class="ignore" onclick="discardRecover()">不要了</button>
+  </div>
+
+  <!-- 安全徽章 -->
+  <div class="safety-badge">
+    <svg class="shield" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+    纯本地运行 · 不上传任何音频 · 开源可审查
+  </div>
+
+  <!-- 安装说明卡片 -->
+  <div class="safety-card" id="installGuide" style="display:none;">
+    <strong>手机桌面安装：</strong><br>
+    Chrome：右上角菜单 → 添加到主屏幕<br>
+    Safari：底部分享按钮 → 添加到主屏幕<br>
+    安装后就像 App，桌面图标一键打开
+  </div>
+
+  <div class="header">
+    <h1>语音转文字</h1>
+    <p>手机 App 版 · 本地识别 · 永久免费</p>
+  </div>
+
+  <div class="browser-warning" id="browserWarning">
+    当前浏览器不支持语音识别。请使用 <strong>Chrome</strong> 或 <strong>Edge</strong> 浏览器打开。
+  </div>
+
+  <div class="card">
+    <!-- 语言选择 -->
+    <div class="lang-row">
+      <label for="langSelect">语言：</label>
+      <select id="langSelect">
+        <option value="zh-CN">中文（普通话）</option>
+        <option value="en-US">English（英语）</option>
+        <option value="ja-JP">日本語（日语）</option>
+        <option value="ko-KR">한국어（韩语）</option>
+        <option value="yue-Hant-HK">粤语</option>
+        <option value="zh-TW">中文（台湾）</option>
+        <option value="fr-FR">Francais（法语）</option>
+        <option value="de-DE">Deutsch（德语）</option>
+        <option value="es-ES">Espanol（西语）</option>
+      </select>
+    </div>
+
+    <!-- 状态 -->
+    <div class="status-bar">
+      <span class="dot idle" id="statusDot"></span>
+      <span id="statusText">准备就绪，点击按钮开始录音</span>
+    </div>
+
+    <!-- 按钮 -->
+    <div class="btn-row">
+      <button class="btn btn-start" id="btnStart">开始录音</button>
+      <button class="btn btn-copy" id="btnCopy">复制</button>
+      <button class="btn btn-clear" id="btnClear">清空</button>
+      <button class="btn btn-download" id="btnDownload">下载 TXT</button>
+    </div>
+
+    <!-- 文本区域 -->
+    <textarea
+      class="text-area"
+      id="textOutput"
+      placeholder="点击「开始录音」后说话，文字实时出现..."
+      readonly
+    ></textarea>
+    <div class="word-count" id="wordCount">字数：0</div>
+  </div>
+
+  <div class="tips">
+    <strong>使用提示：</strong><br>
+    文字自动保存，关闭页面不丢失；Chrome/Edge 打开效果最佳；<br>
+    首次需允许麦克风权限；录音中直接说话，文字实时出现，无需联网。
+  </div>
+
+  <div style="text-align:center;margin-top:16px;font-size:11px;color:#c4b99a;">
+    安全声明：本工具纯浏览器本地运行，<br>代码开源可查，<strong>音频绝不上传任何服务器</strong>。
+  </div>
+</div>
+
+<script>
+// ======================== Service Worker 注册 ========================
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(function() {});
+}
+
+// ======================== 自动保存 / 恢复 ========================
+const STORAGE_KEY = 'stt_v2_text';
+const STORAGE_TIME_KEY = 'stt_v2_time';
+
+function autoSave() {
+  try {
+    localStorage.setItem(STORAGE_KEY, textOutput.value);
+    localStorage.setItem(STORAGE_TIME_KEY, Date.now());
+  } catch(e) {}
+}
+
+function checkRecover() {
+  try {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && saved.trim()) {
+      var time = parseInt(localStorage.getItem(STORAGE_TIME_KEY) || '0', 10);
+      var minutes = time ? Math.floor((Date.now() - time) / 60000) : 0;
+      var chars = saved.replace(/\s/g, '').length;
+      var timeStr = minutes < 1 ? '刚才' : (minutes + ' 分钟前');
+      document.getElementById('recoverMsg').textContent =
+        '检测到 ' + timeStr + ' 的文字（共 ' + chars + ' 字），要恢复吗？';
+      document.getElementById('recoverBanner').classList.add('show');
+    }
+  } catch(e) {}
+}
+
+function recoverText() {
+  try {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      textOutput.value = saved;
+      updateWordCount();
+      statusText.textContent = '已恢复 ' + countChars(saved) + ' 字';
+    }
+  } catch(e) {}
+  document.getElementById('recoverBanner').classList.remove('show');
+}
+
+function discardRecover() {
+  document.getElementById('recoverBanner').classList.remove('show');
+}
+
+// ======================== PWA 安装检测 ========================
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+  || navigator.standalone
+  || document.referrer.includes('android-app://');
+
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+if (!isStandalone && isMobile) {
+  document.getElementById('installGuide').style.display = 'block';
+
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    var banner = document.getElementById('installBanner');
+    banner.classList.add('show');
+    banner.textContent = '点击安装到手机桌面（像 App 一样用）';
+    banner.onclick = function() {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function(result) {
+        banner.classList.remove('show');
+        deferredPrompt = null;
+      });
+    };
+  });
+}
+
+function dismissInstall() {
+  document.getElementById('installBanner').classList.remove('show');
+}
+
+// ======================== 核心逻辑 ========================
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+var recognition = null;
+var isRecording = false;
+var restartCount = 0;
+const MAX_RESTART = 3;
+const RESTART_DELAY = 500;
+var noSpeechCount = 0;
+const MAX_NO_SPEECH = 5;
+const NO_SPEECH_COOLDOWN = 8000;
+var lastSpeechTimestamp = 0;
+
+const btnStart    = document.getElementById('btnStart');
+const btnCopy     = document.getElementById('btnCopy');
+const btnClear    = document.getElementById('btnClear');
+const btnDownload = document.getElementById('btnDownload');
+const textOutput  = document.getElementById('textOutput');
+const statusDot   = document.getElementById('statusDot');
+const statusText  = document.getElementById('statusText');
+const wordCount   = document.getElementById('wordCount');
+const langSelect  = document.getElementById('langSelect');
+const warning     = document.getElementById('browserWarning');
+
+// 浏览器兼容检查
+if (!SpeechRecognition) {
+  warning.style.display = 'block';
+  btnStart.disabled = true;
+  btnStart.textContent = '浏览器不支持';
+  btnStart.style.opacity = '0.5';
+  btnStart.style.cursor = 'not-allowed';
+}
+
+function initRecognition() {
+  if (recognition) {
+    try { recognition.abort(); } catch(e) {}
+  }
+  recognition = new SpeechRecognition();
+  recognition.lang = langSelect.value;
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = function(event) {
+    var interim = '';
+    var final = '';
+
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+
+    if (final) {
+      var current = textOutput.value;
+      textOutput.value = current + (current ? ' ' : '') + final;
+      updateWordCount();
+      noSpeechCount = 0;
+      lastSpeechTimestamp = Date.now();
+      autoSave();  // ★ 自动保存
+    }
+
+    if (interim) {
+      statusText.textContent = interim;
+      noSpeechCount = 0;
+      lastSpeechTimestamp = Date.now();
+    } else if (final) {
+      statusText.textContent = '正在聆听...';
+    }
+  };
+
+  recognition.onerror = function(event) {
+    console.error('语音识别错误:', event.error);
+    switch(event.error) {
+      case 'not-allowed':
+        isRecording = false;
+        restartCount = MAX_RESTART;
+        statusText.textContent = '麦克风权限被拒绝，请在浏览器设置中允许后刷新页面';
+        break;
+      case 'no-speech':
+        noSpeechCount++;
+        if (noSpeechCount >= MAX_NO_SPEECH) {
+          statusText.textContent = '长时间未检测到语音，已自动停止';
+          isRecording = false;
+          restartCount = MAX_RESTART;
+          stopUI();
+        } else {
+          statusText.textContent = '未检测到语音，继续聆听中...（' + noSpeechCount + '/' + MAX_NO_SPEECH + '）';
+          return;
+        }
+        break;
+      case 'audio-capture':
+        isRecording = false;
+        statusText.textContent = '未找到麦克风设备';
+        break;
+      case 'network':
+        statusText.textContent = '网络错误，正在重试...';
+        break;
+      default:
+        statusText.textContent = '出错：' + event.error;
+    }
+    stopUI();
+  };
+
+  recognition.onend = function() {
+    if (isRecording && restartCount < MAX_RESTART) {
+      restartCount++;
+      statusText.textContent = '自动恢复中...（' + restartCount + '/' + MAX_RESTART + '）';
+      setTimeout(function() {
+        if (isRecording) {
+          try { recognition.start(); } catch(e) {
+            console.error('自动重启失败:', e.message || e);
+            isRecording = false;
+            restartCount = 0;
+            noSpeechCount = 0;
+            statusText.textContent = '麦克风权限被拒绝，请刷新页面后重试';
+            stopUI();
+          }
+        }
+      }, RESTART_DELAY);
+      return;
+    }
+    if (restartCount >= MAX_RESTART) {
+      statusText.textContent = '连续识别中断次数过多，已自动停止。请手动重新开始';
+    }
+    restartCount = 0;
+    noSpeechCount = 0;
+    isRecording = false;
+    stopUI();
+    autoSave();  // ★ 停止时也保存
+  };
+
+  recognition.onstart = function() {
+    if (navigator.wakeLock) {
+      navigator.wakeLock.request('screen').catch(function() {});
+    }
+  };
+}
+
+function toggleRecording() {
+  if (!SpeechRecognition) return;
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  initRecognition();
+  try {
+    recognition.start();
+    isRecording = true;
+    startUI();
+  } catch(e) {
+    console.error('启动失败:', e);
+    statusText.textContent = '启动失败，刷新页面重试';
+  }
+}
+
+function stopRecording() {
+  isRecording = false;
+  restartCount = MAX_RESTART;
+  noSpeechCount = 0;
+  if (recognition) {
+    try { recognition.stop(); } catch(e) {}
+  }
+  stopUI();
+}
+
+function startUI() {
+  btnStart.textContent = '停止录音';
+  btnStart.classList.add('recording');
+  statusDot.className = 'dot listening';
+  statusText.textContent = '聆听中...点击停止';
+  textOutput.classList.add('listening-border');
+  textOutput.readOnly = false;
+}
+
+function stopUI() {
+  btnStart.textContent = '开始录音';
+  btnStart.classList.remove('recording');
+  statusDot.className = 'dot idle';
+  statusText.textContent = textOutput.value
+    ? '已停止，共 ' + countChars(textOutput.value) + ' 字'
+    : '准备就绪，点击开始录音';
+  textOutput.classList.remove('listening-border');
+}
+
+// ======================== 辅助功能 ========================
+
+function copyText() {
+  var txt = textOutput.value.trim();
+  if (!txt) {
+    statusText.textContent = '没有可复制的内容';
+    shakeElement(btnCopy);
+    return;
+  }
+  navigator.clipboard.writeText(txt).then(function() {
+    statusText.textContent = '已复制！';
+    setTimeout(function() { statusText.textContent = '准备就绪'; }, 1500);
+  }).catch(function() {
+    textOutput.readOnly = false;
+    textOutput.select();
+    document.execCommand('copy');
+    textOutput.readOnly = !isRecording;
+    statusText.textContent = '已复制！';
+  });
+}
+
+function clearText() {
+  if (!textOutput.value.trim()) return;
+  if (!confirm('确定要清空所有文字吗？')) return;
+  textOutput.value = '';
+  updateWordCount();
+  statusText.textContent = '已清空';
+  autoSave();  // ★ 清空后也保存（空内容）
+}
+
+function downloadText() {
+  var txt = textOutput.value.trim();
+  if (!txt) {
+    statusText.textContent = '没有可下载的内容';
+    shakeElement(btnDownload);
+    return;
+  }
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var filename = '语音转文字_' +
+    now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate()) +
+    '_' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + '-' + pad(now.getSeconds()) + '.txt';
+
+  var blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  statusText.textContent = '已下载：' + filename;
+}
+
+function shakeElement(el) {
+  el.style.animation = 'none';
+  el.offsetHeight;
+  el.style.animation = 'shake 0.4s ease';
+  setTimeout(function() { el.style.animation = ''; }, 400);
+}
+
+function countChars(s) {
+  return s.replace(/\s/g, '').length;
+}
+
+function updateWordCount() {
+  wordCount.textContent = '字数：' + countChars(textOutput.value);
+}
+
+// 语言切换
+langSelect.addEventListener('change', function() {
+  if (isRecording) {
+    stopRecording();
+    setTimeout(function() { startRecording(); }, 200);
+  }
+});
+
+// 手动编辑时更新字数并保存
+textOutput.addEventListener('input', function() {
+  updateWordCount();
+  autoSave();
+});
+
+// 移动端触控事件绑定
+btnStart.addEventListener('click', toggleRecording);
+btnCopy.addEventListener('click', copyText);
+btnClear.addEventListener('click', clearText);
+btnDownload.addEventListener('click', downloadText);
+
+// 防止双击缩放
+document.addEventListener('dblclick', function(e) {
+  if (isMobile) e.preventDefault();
+}, { passive: false });
+
+// 页面关闭前保存
+window.addEventListener('beforeunload', function() {
+  autoSave();
+});
+
+// ======================== 初始化 ========================
+updateWordCount();
+checkRecover();
+
+// 添加抖动动画
+var shakeStyle = document.createElement('style');
+shakeStyle.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}';
+document.head.appendChild(shakeStyle);
+</script>
+
+</body>
+</html>
