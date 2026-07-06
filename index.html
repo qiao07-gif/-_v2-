@@ -538,13 +538,10 @@ function dismissInstall() {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 var recognition = null;
 var isRecording = false;
-var restartCount = 0;
-const MAX_RESTART = 10;   // 手机端更容易断开，多给几次机会
-const RESTART_DELAY = 800;  // 等久一点再重试，给引擎喘息时间
+var failCount = 0;
+const MAX_FAIL = 15;            // 连续失败这么多次才放弃
 var noSpeechCount = 0;
-const MAX_NO_SPEECH = 5;
-const NO_SPEECH_COOLDOWN = 8000;
-var lastSpeechTimestamp = 0;
+const MAX_NO_SPEECH = 8;        // 连续 8 次无语音才认为用户走开了
 
 const btnStart    = document.getElementById('btnStart');
 const btnCopy     = document.getElementById('btnCopy');
@@ -566,6 +563,9 @@ if (!SpeechRecognition) {
   btnStart.style.cursor = 'not-allowed';
 }
 
+// ★ 手机端新策略：说一句停一次，立刻重启下一句
+//    不用 continuous: true（手机引擎扛不住长连接）
+//    改成 continuous: false，每次识别完自动重启，丝滑衔接
 function initRecognition() {
   if (recognition) {
     try { recognition.abort(); } catch(e) {}
@@ -573,7 +573,7 @@ function initRecognition() {
   recognition = new SpeechRecognition();
   recognition.lang = langSelect.value;
   recognition.interimResults = true;
-  recognition.continuous = true;
+  recognition.continuous = false;   // ★ 关键改动：每句结束自动停
   recognition.maxAlternatives = 1;
 
   recognition.onresult = function(event) {
@@ -594,78 +594,89 @@ function initRecognition() {
       textOutput.value = current + (current ? ' ' : '') + final;
       updateWordCount();
       noSpeechCount = 0;
-      lastSpeechTimestamp = Date.now();
-      autoSave();  // ★ 自动保存
+      failCount = 0;
+      autoSave();
     }
 
     if (interim) {
       statusText.textContent = interim;
       noSpeechCount = 0;
-      lastSpeechTimestamp = Date.now();
-    } else if (final) {
-      statusText.textContent = '正在聆听...';
     }
   };
 
   recognition.onerror = function(event) {
-    console.error('语音识别错误:', event.error);
+    console.error('识别错误:', event.error);
     switch(event.error) {
       case 'not-allowed':
         isRecording = false;
-        restartCount = MAX_RESTART;
-        statusText.textContent = '麦克风权限被拒绝，请在浏览器设置中允许后刷新页面';
+        failCount = MAX_FAIL;
+        statusText.textContent = '麦克风权限被拒绝，请在设置中允许后刷新';
         break;
       case 'no-speech':
         noSpeechCount++;
         if (noSpeechCount >= MAX_NO_SPEECH) {
           statusText.textContent = '长时间未检测到语音，已自动停止';
           isRecording = false;
-          restartCount = MAX_RESTART;
-          stopUI();
+          failCount = MAX_FAIL;
         } else {
-          statusText.textContent = '未检测到语音，继续聆听中...（' + noSpeechCount + '/' + MAX_NO_SPEECH + '）';
-          return;
+          // 无语音不显示错误，静默等待下一次重启
+          return;  // 不调 stopUI()
         }
         break;
       case 'audio-capture':
         isRecording = false;
+        failCount = MAX_FAIL;
         statusText.textContent = '未找到麦克风设备';
         break;
+      case 'aborted':
+        // 正常的主动终止，work through onend
+        return;
       case 'network':
-        statusText.textContent = '网络错误，正在重试...';
-        break;
+        // 网络抖了一下，静默重试
+        return;
       default:
-        statusText.textContent = '出错：' + event.error;
+        // 其他未知错误，静默处理
+        return;
     }
     stopUI();
   };
 
   recognition.onend = function() {
-    if (isRecording && restartCount < MAX_RESTART) {
-      restartCount++;
-      statusText.textContent = '自动恢复中...（' + restartCount + '/' + MAX_RESTART + '）';
-      setTimeout(function() {
-        if (isRecording) {
-          try { recognition.start(); } catch(e) {
-            console.error('自动重启失败:', e.message || e);
-            isRecording = false;
-            restartCount = 0;
-            noSpeechCount = 0;
-            statusText.textContent = '麦克风权限被拒绝，请刷新页面后重试';
-            stopUI();
-          }
+    // 录音中且没超失败次数 → 立即重启
+    if (isRecording && failCount < MAX_FAIL) {
+      // 用极短延迟重新启动，实现"无缝衔接"
+      try {
+        recognition.start();
+        failCount = 0;  // 启动成功，重置失败计数
+      } catch(e) {
+        failCount++;
+        console.error('重启失败(' + failCount + '/' + MAX_FAIL + '):', e.message || e);
+        if (failCount >= MAX_FAIL) {
+          isRecording = false;
+          statusText.textContent = '识别引擎异常，请手动重新开始';
+          stopUI();
+        } else {
+          // 失败后等一会儿再试
+          setTimeout(function() {
+            if (isRecording) {
+              try { recognition.start(); } catch(e2) {
+                failCount++;
+              }
+            }
+          }, 300);
         }
-      }, RESTART_DELAY);
+      }
       return;
     }
-    if (restartCount >= MAX_RESTART) {
-      statusText.textContent = '连续识别中断次数过多，已自动停止。请手动重新开始';
+    // 用户主动停止或连续失败太多
+    if (failCount >= MAX_FAIL && isRecording) {
+      statusText.textContent = '识别引擎异常，请手动重新开始';
     }
-    restartCount = 0;
+    failCount = 0;
     noSpeechCount = 0;
     isRecording = false;
     stopUI();
-    autoSave();  // ★ 停止时也保存
+    autoSave();
   };
 
   recognition.onstart = function() {
@@ -698,7 +709,7 @@ function startRecording() {
 
 function stopRecording() {
   isRecording = false;
-  restartCount = MAX_RESTART;
+  failCount = MAX_FAIL;
   noSpeechCount = 0;
   if (recognition) {
     try { recognition.stop(); } catch(e) {}
